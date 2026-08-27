@@ -1,0 +1,40 @@
+{
+  "category_a_core_operational": [
+    "SQL", "Snowflake", "Power BI", "Tableau", "Looker Studio",
+    "SLA/TAT monitoring", "VBA/Macros", "market research frameworks"
+  ],
+  "category_b_ai_automation_build": [
+    "n8n", "Python", "FastAPI", "multi-LLM orchestration",
+    "prompt engineering", "AI workflow design", "custom AI persona design"
+  ],
+  "category_c_target_role_signals": [
+    "AI Agent Governance & Risk Auditing",
+    "Microsoft AI Product Management coursework",
+    "Google AI Professional Certificate",
+    "AI Agent Governance Auditor project",
+    "Adoption-Trust Gap project",
+    "Reviora knowledge copilot project",
+    "MA Psychology / behavioral-statistical background"
+  ],
+  "stage1_title_queries": [
+    "Process Automation Analyst",
+    "Business Process Automation Analyst",
+    "Intelligent Automation Analyst",
+    "Digital Transformation Analyst",
+    "AI Enablement Analyst",
+    "AI Enablement Specialist",
+    "Workflow Automation Analyst",
+    "AI Automation Analyst",
+    "AI Operations Analyst",
+    "AI Governance Analyst"
+  ],
+  "stage1_tool_keyword_queries": [
+    "n8n",
+    "Power Automate",
+    "UiPath",
+    "Zapier automation",
+    "workflow automation platform"
+  ],
+  "approved_by_user": true,
+  "approved_note": "User added specific job-title phrasing + tool-keyword search angle. This is the locked Stage 1 query set."
+}

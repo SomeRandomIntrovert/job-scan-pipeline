@@ -1,0 +1,41 @@
+{
+  "greenhouse_confirmed": [
+    {"company": "CB Insights", "slug": "cbinsights"},
+    {"company": "Glean", "slug": "gleanwork"},
+    {"company": "Cresta", "slug": "cresta"}
+  ],
+  "greenhouse_needs_verification": [
+    {"company": "Coveo", "guessed_slug": "coveo"},
+    {"company": "Celonis", "guessed_slug": "celonis"},
+    {"company": "Workato", "guessed_slug": "workato"}
+  ],
+  "ashby_confirmed": [
+    {"company": "Zapier", "slug": "zapier"},
+    {"company": "Writer", "slug": "writer"},
+    {"company": "Sierra", "slug": "Sierra"},
+    {"company": "Cognition", "slug": "cognition"},
+    {"company": "LangChain", "slug": "langchain"},
+    {"company": "Relevance AI", "slug": "relevanceai"},
+    {"company": "Fiddler AI", "slug": "fiddler-ai"},
+    {"company": "Arthur AI", "slug": "arthur-ai"}
+  ],
+  "ashby_needs_verification": [
+    {"company": "UiPath", "guessed_slug": "uipath"},
+    {"company": "Credo AI", "guessed_slug": "credo-ai"}
+  ],
+  "unsupported": [
+    {"company": "Forrester", "reason": "Workday"},
+    {"company": "IDC", "reason": "iCIMS"},
+    {"company": "HFS Research", "reason": "iCIMS"},
+    {"company": "Everest Group", "reason": "Workday + Anaplan"},
+    {"company": "GlobalData", "reason": "custom career site, no standard ATS"},
+    {"company": "Guru", "reason": "Rippling"},
+    {"company": "Moveworks", "reason": "SmartRecruiters + Instahyre"},
+    {"company": "Automation Anywhere", "reason": "Workday"},
+    {"company": "Pega", "reason": "unclear ATS, custom career site"},
+    {"company": "ServiceNow", "reason": "SmartRecruiters"},
+    {"company": "Lindy AI", "reason": "unclear ATS, custom career site"},
+    {"company": "Observe.AI", "reason": "unclear ATS, custom career site"},
+    {"company": "Holistic AI", "reason": "BambooHR"}
+  ]
+}

@@ -1,0 +1,70 @@
+name: Daily Job Scan Pipeline
+
+on:
+  schedule:
+    # 10:30 UTC = 4:00 PM IST, chosen with a ~2.5hr buffer past the latest
+    # possible Gemini free-tier quota reset (1:30 PM IST in winter/PST).
+    # IST has no DST, so this UTC time never needs seasonal adjustment.
+    - cron: "30 10 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt --break-system-packages
+
+      - name: Reconstruct Google service account key file
+        run: echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}' > service_account.json
+
+      - name: Run Stage 1 (pull job postings)
+        working-directory: src
+        env:
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+        run: python -u stage1_pull.py
+
+      - name: Run Stage 1.5 (dealbreaker tagging — free, no API calls)
+        working-directory: src
+        run: python -u stage1_5_tag.py
+
+      - name: Run Stage 2 (fit scoring)
+        working-directory: src
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python -u stage2_score.py
+
+      - name: Run Stage 4a (write to Google Sheet)
+        working-directory: src
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ github.workspace }}/service_account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        run: python -u stage4_sheets.py
+
+      - name: Run Stage 4b (Telegram digest)
+        working-directory: src
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+        run: python -u telegram_digest.py
+
+      - name: Clean up credential file
+        if: always()
+        run: rm -f service_account.json

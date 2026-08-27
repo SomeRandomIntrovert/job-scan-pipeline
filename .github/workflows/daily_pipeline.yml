@@ -26,7 +26,19 @@ jobs:
         run: pip install -r requirements.txt --break-system-packages
 
       - name: Reconstruct Google service account key file
-        run: echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}' > service_account.json
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
+        run: |
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT" > service_account.json
+          python3 -c "import json; json.load(open('service_account.json'))" && echo "service_account.json is valid JSON" || echo "WARNING: service_account.json is NOT valid JSON -- check the secret's value"
+        # Passing the secret through an env var (not interpolating it
+        # directly into the shell command text) matters: direct
+        # interpolation inside a quoted echo can break if the JSON
+        # contains certain characters, producing an invalid/truncated
+        # file. This is the robust pattern for JSON secrets in Actions.
+        # The validation line below catches a bad secret immediately,
+        # in this step's own log, rather than failing confusingly two
+        # steps later inside Stage 4a.
 
       - name: Run Stage 1 (pull job postings)
         working-directory: src

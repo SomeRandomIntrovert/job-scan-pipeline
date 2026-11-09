@@ -25,7 +25,7 @@ INPUT_PATH = os.path.join(os.path.dirname(__file__), "..", "output", "stage2_sco
 IST = timezone(timedelta(hours=5, minutes=30))
 
 SHEET_HEADERS = [
-    "Date Added to Sheet", "Date Posted", "Title", "Company", "Score",
+    "Date Added to Sheet", "Date Posted", "Title", "Company", "Score", "Role Tier", "Recommendation", "Top Matching Keywords", "Red Flags",
     "Passed Threshold", "Age Bracket", "Flags", "Location", "Remote",
     "JD Link", "Fit Reasoning", "Status",
 ]
@@ -63,6 +63,10 @@ def posting_to_row(p, date_added_to_sheet):
         _cell_safe(p.get("title", "")),
         _cell_safe(p.get("company", "")),
         p.get("fit_score") if p.get("fit_score") is not None else "",
+        p.get("role_tier", "none"),
+        p.get("recommendation", "Skip"),
+        "; ".join(p.get("top_matched_keywords", [])),
+        "; ".join(p.get("red_flags", [])),
         "Yes" if p.get("passed_threshold") else "No",
         _cell_safe(p.get("age_bracket", "")),
         "; ".join(p.get("flags", [])),
@@ -70,7 +74,7 @@ def posting_to_row(p, date_added_to_sheet):
         "Yes" if p.get("remote") else "No",
         _cell_safe(p.get("apply_url", "")),
         _cell_safe(p.get("fit_reasoning", "")),
-        "",  # Status -- left blank, this is YOUR column to fill in
+        "",  # Status -- left blank for you to fill in
     ]
 
 

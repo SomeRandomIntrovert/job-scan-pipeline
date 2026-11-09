@@ -1,9 +1,14 @@
 """
-Stage 4b -- Telegram digest. Sends a single daily message with new
-postings that (a) passed your fit threshold and (b) haven't already
-triggered a Telegram alert before. If more than 5 qualify, shows the
-top 5 by score; the rest are still marked delivered (Option A) -- they
-stay fully visible in the Sheet, they just don't re-surface here.
+Stage 4b -- Telegram digest.
+
+Sends a daily message with new postings that:
+(a) passed the existing fit threshold,
+(b) have recommendation == "Apply", and
+(c) haven't already triggered a Telegram alert.
+
+Shows up to 5 postings, ranked by role tier first and score second.
+All eligible postings are marked delivered; those not shown remain
+available in Google Sheets.
 """
 
 import html
@@ -33,13 +38,22 @@ def format_posting(p, index):
     title = html.escape(p.get("title", "Untitled"))
     company = html.escape(p.get("company", "Unknown"))
     score = p.get("fit_score", "")
-    loc_raw = p.get("location", "") or ("Remote" if p.get("remote") else "")
-    location = html.escape(loc_raw)
-    age = AGE_LABELS.get(p.get("age_bracket", ""), p.get("age_bracket", ""))
-    apply_url = p.get("apply_url", "")
+    tier = p.get("role_tier", "none")
+    recommendation = html.escape(p.get("recommendation", "Apply"))
+
+    loc_raw = p.get("location", "") or (
+        "Remote" if p.get("remote") else ""
+    )
+    location = html.escape(str(loc_raw))
+    age = AGE_LABELS.get(
+        p.get("age_bracket", ""),
+        p.get("age_bracket", "")
+    )
+    apply_url = html.escape(p.get("apply_url", ""), quote=True)
 
     return (
-        f"{index}. <b>{title}</b> @ {company} — {score}\n"
+        f"{index}. <b>{title}</b> @ {company}\n"
+        f"   Tier {tier} · {recommendation} · Score {score}\n"
         f"   {location} · Posted {age}\n"
         f"   <a href=\"{apply_url}\">Apply</a>"
     )
@@ -49,13 +63,37 @@ def build_digest_message(new_matches):
     count = len(new_matches)
 
     if count == 0:
-        return None  # caller sends the "no new matches" message directly
+        return None
 
-    top = sorted(new_matches, key=lambda p: p.get("fit_score", 0), reverse=True)[:MAX_SHOWN]
+    def sort_key(p):
+        tier = p.get("role_tier", 99)
 
-    lines = [f"📋 <b>{count} new match{'es' if count != 1 else ''} today</b>"]
+        # Treat missing/invalid tier as lowest priority.
+        try:
+            tier = int(tier)
+        except (TypeError, ValueError):
+            tier = 99
+
+        score = p.get("fit_score", 0)
+
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            score = 0
+
+        return tier, -score
+
+    top = sorted(new_matches, key=sort_key)[:MAX_SHOWN]
+
+    lines = [
+        f"📋 <b>{count} new Apply match{'es' if count != 1 else ''} today</b>"
+    ]
+
     if count > MAX_SHOWN:
-        lines.append(f"Showing top {MAX_SHOWN} by score — see your Sheet for the rest.")
+        lines.append(
+            f"Showing top {MAX_SHOWN} by tier, then score — see your Sheet for the rest."
+        )
+
     lines.append("")
 
     for i, p in enumerate(top, start=1):
@@ -93,15 +131,38 @@ def main():
 
     print(f"Loaded {len(postings)} postings from Stage 2.", flush=True)
 
-    passed = [p for p in postings if p.get("passed_threshold")]
-    print(f"{len(passed)} postings passed the fit threshold.", flush=True)
+    eligible = [
+        p for p in postings
+        if p.get("passed_threshold")
+        and p.get("recommendation") == "Apply"
+    ]
+
+    print(
+        f"{len(eligible)} postings passed the threshold "
+        "and have recommendation Apply.",
+        flush=True,
+    )
 
     client = dedup.get_client()
-    passed_keys = [f"{p['source']}|{p['external_id']}" for p in passed]
-    undelivered_keys = dedup.get_undelivered(client, passed_keys, "telegram")
 
-    new_matches = [p for p in passed if f"{p['source']}|{p['external_id']}" in undelivered_keys]
-    print(f"{len(new_matches)} new matches not yet sent to Telegram.", flush=True)
+    eligible_keys = [
+        f"{p['source']}|{p['external_id']}"
+        for p in eligible
+    ]
+
+    undelivered_keys = dedup.get_undelivered(
+        client, eligible_keys, "telegram"
+    )
+
+    new_matches = [
+        p for p in eligible
+        if f"{p['source']}|{p['external_id']}" in undelivered_keys
+    ]
+
+    print(
+        f"{len(new_matches)} new matches not yet sent to Telegram.",
+        flush=True,
+    )
 
     if not new_matches:
         send_telegram_message("📋 No new matches today (score above threshold).")

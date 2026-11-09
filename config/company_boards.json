@@ -2,7 +2,9 @@
   "greenhouse_confirmed": [
     {"company": "CB Insights", "slug": "cbinsights"},
     {"company": "Glean", "slug": "gleanwork"},
-    {"company": "Cresta", "slug": "cresta"}
+    {"company": "Cresta", "slug": "cresta"},
+    {"company": "Observe.AI", "slug": "observeai"},
+    {"company": "Razorpay", "slug": "razorpaysoftwareprivatelimited"}
   ],
   "greenhouse_needs_verification": [
     {"company": "Coveo", "guessed_slug": "coveo"},
@@ -17,7 +19,8 @@
     {"company": "LangChain", "slug": "langchain"},
     {"company": "Relevance AI", "slug": "relevanceai"},
     {"company": "Fiddler AI", "slug": "fiddler-ai"},
-    {"company": "Arthur AI", "slug": "arthur-ai"}
+    {"company": "Arthur AI", "slug": "arthur-ai"},
+    {"company": "Atlan", "slug": "atlan"}
   ],
   "ashby_needs_verification": [
     {"company": "UiPath", "guessed_slug": "uipath"},
@@ -35,7 +38,6 @@
     {"company": "Pega", "reason": "unclear ATS, custom career site"},
     {"company": "ServiceNow", "reason": "SmartRecruiters"},
     {"company": "Lindy AI", "reason": "unclear ATS, custom career site"},
-    {"company": "Observe.AI", "reason": "unclear ATS, custom career site"},
     {"company": "Holistic AI", "reason": "BambooHR"}
   ]
 }

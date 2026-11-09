@@ -37,48 +37,106 @@ SCORE_THRESHOLD = 65  # postings scoring below this won't reach Stage 4 (Sheet/T
                        # ADJUST THIS if 65 turns out too strict or too loose once you see real output
 BOOST_POINTS = 5  # applied programmatically for the psych/arts Stage 1.5 boost flag, not re-decided by the LLM
 
-SCORING_PROMPT = """You are scoring job postings for ROLE FIT against a candidate's background.
-Score ONLY on whether the role's actual responsibilities and required
-skills match what this candidate does and is moving toward. Do NOT factor
-in education requirements, years-of-experience requirements, location, or
-work authorization -- those are handled separately and must not affect
-this score.
+SCORING_PROMPT = """You are scoring job postings for one candidate. Use ONLY the resume text and rules below.
 
-The candidate is NOT narrowly targeting "AI governance" roles specifically
--- they are targeting the broader AI + Automation Analytics space:
-governance, enablement, operations, strategy, knowledge management, and
-business process improvement all count as strong fits. Do not
-under-score a role just because it's operations-flavored rather than
-governance-flavored -- both are equally the target, per the candidate's
-own stated direction.
+CANDIDATE:
+- Approximately 2.5 years of professional experience.
+- Background in Trust & Safety, fraud/spam detection, content policy compliance, risk operations, market research, and AI-enabled operations.
+- Psychology education and behavioral research background.
 
-IMPORTANT: the candidate's resume includes product management frameworks
-and methodologies (Agile, Scrum, RICE, MoSCoW, A/B testing, etc.) and a
-completed PM certification. This is SUPPORTING evidence that satisfies a
-common requirement in many AI/automation/analytics postings -- it is NOT
-a signal that the candidate is targeting Product Manager roles as a
-category. A posting titled "Product Manager" with no AI/automation/
-analytics component should NOT score well just because the candidate has
-PM literacy. Conversely, do not penalize a strong AI/automation/analytics
-role for also listing PM methodologies as a requirement -- the candidate
-already meets that requirement, so it should not count against the score
-either way.
+TARGET ROLE TIERS:
 
-CANDIDATE BACKGROUND:
----
-{resume_text}
----
+Tier 1 — Best fit:
+- Trust & Safety Analyst / Associate / Specialist
+- Scaled Abuse Analyst, Enforcement Detection Analyst, Platform Integrity Analyst
+- Fraud Risk, Fraud Operations, Fraud Prevention Analyst
+- Risk & Fraud Data Analyst, Risk and Compliance Specialist
+- AI Risk Analyst, AI Governance Analyst, Responsible AI Analyst
+- AI Policy Compliance Analyst, Content Policy Analyst
+- Compliance Associate / Analyst in content review or global compliance
+- Policy Enforcement Specialist
 
-For each posting, output a fit score from 0-100 and a one-sentence
-reasoning (max 25 words) grounded in actual responsibility/skill overlap,
-not generic praise.
+Tier 2 — Strong secondary fit:
+- AI Operations Analyst
+- AI Solution Analyst focused on AI workflows
+- AI Knowledge Analyst
+- AI and Automation Analyst
+- Associate D&T Analyst focused on AI and automation
+- Business Process Analyst, Process Automation Analyst
+- Operations Analyst, Product Operations Specialist
+- Business Intelligence Analyst
+- Junior Business Analyst
+- Insights and Enablement Analyst
 
-Return ONLY valid JSON, no markdown fences, no preamble, in this exact
-shape:
+Tier 3 — Opportunistic:
+- Governance and Controls QA, especially financial crime
+- Junior forensic or fraud investigations roles
+- Content moderation Quality and Training Specialist
+- Research or market insights analyst
+
+Assign role_tier based on the actual responsibilities, not merely the job title.
+Use "none" if the role does not meaningfully fit any tier.
+
+LEVEL:
+- Strongly prefer roles asking for 0–3 years of experience.
+- Penalize roles asking for 3–4 years.
+- Roles requiring 4+ years should generally receive a low score and "Skip".
+- Do not mistake preferred qualifications for mandatory requirements.
+- Do not score based on age.
+
+SCORING (0–100):
+- 40 points: role family and tier match
+- 30 points: overlap of required skills with the resume; semantic matches count
+- 15 points: experience-level fit
+- 10 points: location and work-mode fit
+- 5 points: company and environment fit
+
+Subtract points for mandatory tools or skills that the resume does not support.
+Do NOT award credit for skills, tools, certifications, or experience absent from the resume.
+Do not let a superficial mention of AI make an otherwise unrelated job a strong match.
+
+LOCATION:
+Delhi NCR, Hyderabad/Secunderabad, and India-remote roles are preferred.
+Other Indian locations are less preferred.
+Do not assume remote work is India-based unless the posting supports that.
+
+HONESTY RULES:
+- Python and FastAPI: personal-project depth only.
+- Snowflake: queried and reported from only.
+- No RPA experience.
+- No deep ML engineering experience.
+- No JavaScript or TypeScript experience.
+- Do not exaggerate the candidate's experience or proficiency.
+- Use only skills and experience supported by the resume.
+
+RECOMMENDATION:
+- "Apply": score >= 70 AND role_tier is 1 or 2.
+- "Gate-check": score 50–69 OR role_tier is 3.
+- "Skip": score < 50 OR role_tier is "none".
+- These recommendations are based on role fit. Stage 1.5 hard-dealbreaker flags are handled separately by the pipeline.
+
+For each posting, return:
+- key: exact posting key provided in the input
+- score: integer from 0 to 100
+- role_tier: 1, 2, 3, or "none"
+- recommendation: "Apply", "Gate-check", or "Skip"
+- top_matched_keywords: list of at most 3 relevant resume skills or experiences
+- red_flags: short list of meaningful mismatches or concerns; use [] if none
+- reason: one concise sentence explaining the score
+
+Return ONLY valid JSON. No markdown fences, preamble, or commentary.
+Return one object for every posting, using this exact structure:
 
 [
-  {{"key": "...", "score": 78, "reasoning": "..."}},
-  {{"key": "...", "score": 22, "reasoning": "..."}}
+  {{
+    "key": "exact-posting-key",
+    "score": 78,
+    "role_tier": 1,
+    "recommendation": "Apply",
+    "top_matched_keywords": ["Fraud detection", "Content policy compliance", "SQL"],
+    "red_flags": [],
+    "reason": "Strong overlap with fraud operations, policy enforcement, and risk analysis."
+  }}
 ]
 
 POSTINGS:
@@ -102,18 +160,23 @@ def build_batch_prompt(resume_text, batch):
 
 def score_batch(client, resume_text, batch):
     prompt = build_batch_prompt(resume_text, batch)
+
     try:
-        response = client.models.generate_content(model="gemini-3.6-flash", contents=prompt)
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=prompt,
+        )
     except Exception as e:
         print(f"[stage2] Gemini call failed for batch, leaving scores empty: {e}")
         return {}
 
-    raw = response.text.strip()
+    raw = (response.text or "").strip()
+
+    # Remove optional Markdown fences.
     if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+        raw = raw.strip("`").strip()
+        if raw.lower().startswith("json"):
+            raw = raw[4:].strip()
 
     try:
         parsed = json.loads(raw)
@@ -121,7 +184,83 @@ def score_batch(client, resume_text, batch):
         print(f"[stage2] Could not parse batch response, leaving scores empty: {e}")
         return {}
 
-    return {item["key"]: item for item in parsed}
+    if not isinstance(parsed, list):
+        print("[stage2] Expected a JSON list; leaving scores empty.")
+        return {}
+
+    # Only accept keys belonging to the current batch.
+    expected_keys = {
+        f"{p['source']}|{p['external_id']}"
+        for p in batch
+    }
+
+    results = {}
+
+    valid_tiers = {1, 2, 3, "none"}
+    valid_recommendations = {"Apply", "Gate-check", "Skip"}
+
+    for item in parsed:
+        if not isinstance(item, dict):
+            print("[stage2] Ignoring malformed response item.")
+            continue
+
+        key = item.get("key")
+
+        if not isinstance(key, str) or key not in expected_keys:
+            print(f"[stage2] Ignoring unknown or missing posting key: {key!r}")
+            continue
+
+        score = item.get("score")
+
+        # Fail safely if score is missing or invalid.
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            print(f"[stage2] Missing/invalid score for {key}; skipping item.")
+            continue
+
+        if not 0 <= score <= 100:
+            print(f"[stage2] Out-of-range score for {key}; skipping item.")
+            continue
+
+        role_tier = item.get("role_tier", "none")
+        if role_tier not in valid_tiers:
+            role_tier = "none"
+
+        recommendation = item.get("recommendation", "Skip")
+        if recommendation not in valid_recommendations:
+            recommendation = "Skip"
+
+        keywords = item.get("top_matched_keywords", [])
+        if not isinstance(keywords, list):
+            keywords = []
+        keywords = [str(x)[:100] for x in keywords if x is not None][:3]
+
+        red_flags = item.get("red_flags", [])
+        if not isinstance(red_flags, list):
+            red_flags = []
+        red_flags = [str(x)[:200] for x in red_flags if x is not None]
+
+        reason = item.get("reason", "")
+        if not isinstance(reason, str):
+            reason = ""
+
+        results[key] = {
+            "key": key,
+            "score": int(score),
+            "role_tier": role_tier,
+            "recommendation": recommendation,
+            "top_matched_keywords": keywords,
+            "red_flags": red_flags,
+            "reason": reason[:500],
+        }
+
+    missing_keys = expected_keys - results.keys()
+    if missing_keys:
+        print(
+            f"[stage2] Response omitted {len(missing_keys)} posting(s); "
+            "they will remain unscored and can be retried."
+        )
+
+    return results
 
 
 def _apply_and_write(postings, results_map):
@@ -147,11 +286,19 @@ def _apply_and_write(postings, results_map):
         if result is None:
             p["fit_score"] = None
             p["fit_reasoning"] = "Not yet scored"
+            p["role_tier"] = "none"
+            p["recommendation"] = "Skip"
+            p["top_matched_keywords"] = []
+            p["red_flags"] = []
             p["boost_applied"] = False
             p["passed_threshold"] = False
         else:
             p["fit_score"] = result["fit_score"]
             p["fit_reasoning"] = result["fit_reasoning"]
+            p["role_tier"] = result.get("role_tier", "none")
+            p["recommendation"] = result.get("recommendation", "Skip")
+            p["top_matched_keywords"] = result.get("top_matched_keywords", [])[:3]
+            p["red_flags"] = result.get("red_flags", [])
             p["boost_applied"] = result.get("boost_applied", False)
             p["passed_threshold"] = result["passed_threshold"]
 
@@ -266,12 +413,25 @@ def main():
             p = postings_by_key.get(key)
             if p is None:
                 continue
+
             raw_score = r.get("score", 0)
-            boost_applied = "Boost: psych/arts/social-science preferred" in p.get("flags", [])
-            final_score = min(100, raw_score + BOOST_POINTS) if boost_applied else raw_score
+            boost_applied = (
+                "Boost: psych/arts/social-science preferred"
+                in p.get("flags", [])
+            )
+            final_score = (
+                min(100, raw_score + BOOST_POINTS)
+                if boost_applied
+                else raw_score
+            )
+
             results_map[key] = {
                 "fit_score": final_score,
-                "fit_reasoning": r.get("reasoning", ""),
+                "fit_reasoning": r.get("reason", ""),
+                "role_tier": r.get("role_tier", "none"),
+                "recommendation": r.get("recommendation", "Skip"),
+                "top_matched_keywords": r.get("top_matched_keywords", [])[:3],
+                "red_flags": r.get("red_flags", []),
                 "boost_applied": boost_applied,
                 "passed_threshold": final_score >= SCORE_THRESHOLD,
             }

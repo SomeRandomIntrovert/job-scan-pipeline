@@ -65,6 +65,52 @@ SOFT_WORDS = [
 
 RANGE_EXPERIENCE_PATTERN = re.compile(r"(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\+?\s*(?:years?|yrs?)", re.IGNORECASE)
 SINGLE_EXPERIENCE_PATTERN = re.compile(r"(\d{1,2})\+?\s*(?:years?|yrs?)", re.IGNORECASE)
+# CR-04: deterministic dealbreaker and soft-flag rules
+
+SENIORITY_TITLE_PATTERN = re.compile(
+    r"\b(senior|sr\.?|lead|manager|head|principal|director|vp|staff)\b",
+    re.IGNORECASE,
+)
+
+EXCLUDED_REQUIRED_DEGREES = [
+    r"\bMBA\b",
+    r"\bCA\b",
+    r"\bCFA\b",
+    r"\bCPA\b",
+    r"\bPh\.?D\.?\b",
+    r"\bPhD\b",
+]
+
+EXCLUDED_REQUIRED_TOOLS = [
+    "UiPath", "Actimize", "Falcon", "SAS", "FICO",
+    "NICE", "BPMN", "process mining", "Alteryx", "KNIME",
+]
+
+SOFT_EXCLUDED_ROLE_FAMILIES = {
+    "deep_ml": [
+        "RAG pipeline", "MLOps", "model training",
+        "deep learning engineer",
+    ],
+    "software_engineering": [
+        "React", "Node.js", "TypeScript", "full stack",
+        "Java", "Golang",
+    ],
+    "sales_marketing": [
+        "sales", "business development", "growth marketing", "SEO",
+    ],
+    "market_research_core": [
+        "market research consultant",
+    ],
+}
+
+# Per your instruction, contract and fixed-term employment are allowed.
+# Do not add contract/fixed-term terms to this list.
+EXCLUDED_EMPLOYMENT_PATTERNS = [
+    r"\bthird[- ]party payroll\b",
+    r"\bconsultant[- ]contract\b",
+    r"\bfreelance(?:r|rs)?\b",
+    r"\bintern(?:ship)?\b",
+]
 
 PROXIMITY_WINDOW = 70  # chars checked around a match for mandatory/soft language --
                         # deliberately local rather than whole-sentence, since real JD
@@ -143,33 +189,59 @@ def check_education(text):
 
 
 def check_experience(text):
-    found_years = []
-    covered_spans = []
+    """
+    CR-04 experience rule:
+    - Hard flag when a clear minimum requirement exceeds 4 years.
+    - Allow postings explicitly mentioning 0-3 years.
+    - Soft flag when experience wording is ambiguous.
+    """
+    text_lower = text.lower()
 
-    for match in RANGE_EXPERIENCE_PATTERN.finditer(text):
-        lower_bound = int(match.group(1))
-        covered_spans.append((match.start(), match.end()))
-        has_mandatory = _has_nearby(text, match.start(), match.end(), MANDATORY_WORDS)
-        has_soft = _has_nearby(text, match.start(), match.end(), SOFT_WORDS)
-        if lower_bound >= 6 and has_mandatory and not has_soft:
-            found_years.append(lower_bound)
+    # Explicit 0-3-year experience makes this posting eligible,
+    # including a senior title paired with an early-career requirement.
+    has_0_3_years = bool(
+        re.search(
+            r"\b0\s*(?:-|–|to)\s*3\s*\+?\s*(?:years?|yrs?)\b",
+            text_lower,
+        )
+        or re.search(
+            r"\b(?:0|1|2|3)\s*\+?\s*(?:years?|yrs?)\b",
+            text_lower,
+        )
+    )
 
-    for match in SINGLE_EXPERIENCE_PATTERN.finditer(text):
-        if any(match.start() >= s and match.end() <= e for s, e in covered_spans):
-            continue
-        years = int(match.group(1))
-        has_mandatory = _has_nearby(text, match.start(), match.end(), MANDATORY_WORDS)
-        has_soft = _has_nearby(text, match.start(), match.end(), SOFT_WORDS)
-        if years >= 6 and has_mandatory and not has_soft:
-            found_years.append(years)
-
-    if not found_years:
+    if has_0_3_years:
         return []
-    # A posting with multiple mandatory-experience mentions (common in
-    # multi-level Accenture-style postings) is a dealbreaker either way --
-    # report only the lowest genuine threshold found, not every number,
-    # since listing 12+ AND 15+ separately adds noise without adding signal.
-    return [f"Requires: {min(found_years)}+ yrs experience"]
+
+    matches = list(RANGE_EXPERIENCE_PATTERN.finditer(text))
+    matches += [
+        m for m in SINGLE_EXPERIENCE_PATTERN.finditer(text)
+        if not any(r.start() <= m.start() and r.end() >= m.end() for r in matches)
+    ]
+
+    if not matches:
+        return []
+
+    # The spec says to use the first number/range near years/yrs.
+    match = min(matches, key=lambda m: m.start())
+
+    if match.lastindex and match.lastindex >= 2:
+        minimum_years = int(match.group(1))
+        maximum_years = int(match.group(2))
+    else:
+        minimum_years = int(match.group(1))
+        maximum_years = minimum_years
+
+    if minimum_years > 4:
+        return [f"Requires: {minimum_years}+ yrs experience"]
+
+    # A 4-year range is not a hard dealbreaker under the >4 rule.
+    # If the description contains confusing/multiple experience values,
+    # flag softly for review rather than hard-excluding.
+    if len(matches) > 1:
+        return ["Soft: ambiguous experience requirement"]
+
+    return []
 
 
 INDIA_STATE_MARKERS = [
@@ -416,15 +488,90 @@ def strip_html(text):
 
 def tag_posting(posting):
     description = strip_html(posting.get("description", ""))
+    title = str(posting.get("title", ""))
+    full_text = f"{title}\n{description}"
+    full_text_lower = full_text.lower()
     sentences = split_sentences(description)
 
     flags = []
+
+    # Existing behavior
     flags.extend(check_education(description))
     flags.extend(check_experience(description))
-    flags.extend(check_location(posting.get("location", ""), posting.get("remote", False), sentences, posting.get("source", "")))
-    flags.extend(check_work_auth(posting.get("remote", False), sentences))
 
-    return flags
+    # CR-04: seniority title
+    seniority_match = SENIORITY_TITLE_PATTERN.search(title)
+
+    has_0_3_years = bool(
+        re.search(
+            r"\b(?:0\s*(?:-|–|to)\s*3|[0-3])\s*(?:years?|yrs?)\b",
+            full_text_lower,
+        )
+    )
+
+    if seniority_match and not has_0_3_years:
+        flags.append(
+            f"Requires: seniority title ({seniority_match.group(1)})"
+        )
+
+    # CR-04: excluded employment types
+    for pattern in EXCLUDED_EMPLOYMENT_PATTERNS:
+        match = re.search(pattern, full_text, re.IGNORECASE)
+        if match:
+            flags.append(f"Requires: excluded employment type ({match.group(0)})")
+
+    # CR-04: mandatory excluded degrees
+    for pattern in EXCLUDED_REQUIRED_DEGREES:
+        match = re.search(pattern, full_text, re.IGNORECASE)
+
+        if match and _has_nearby(
+            full_text,
+            match.start(),
+            match.end(),
+            MANDATORY_WORDS,
+        ):
+            flags.append(
+                f"Requires: excluded degree ({match.group(0)})"
+            )
+
+    # CR-04: excluded tools — soft flag only
+    for tool in EXCLUDED_REQUIRED_TOOLS:
+        match = re.search(
+            rf"\b{re.escape(tool)}\b",
+            full_text,
+            re.IGNORECASE,
+        )
+
+        if match and _has_nearby(
+            full_text,
+            match.start(),
+            match.end(),
+            MANDATORY_WORDS,
+        ):
+            flags.append(f"Soft: required excluded tool ({tool})")
+
+    # CR-04: excluded role families — soft flags
+    for category, terms in SOFT_EXCLUDED_ROLE_FAMILIES.items():
+        for term in terms:
+            if re.search(re.escape(term), full_text, re.IGNORECASE):
+                flags.append(f"Soft: excluded role family ({category})")
+                break
+
+    # Existing location and work-authorization behavior
+    flags.extend(
+        check_location(
+            posting.get("location", ""),
+            posting.get("remote", False),
+            sentences,
+            posting.get("source", ""),
+        )
+    )
+    flags.extend(
+        check_work_auth(posting.get("remote", False), sentences)
+    )
+
+    # Remove duplicate flags while preserving order
+    return list(dict.fromkeys(flags))
 
 
 def main():

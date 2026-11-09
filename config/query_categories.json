@@ -49,7 +49,7 @@
     "Business Intelligence Analyst",
     "Business Analyst",
     "Insights and Enablement Analyst"
-],
+  ],
   "stage1_tool_keyword_queries": [
     "content moderation",
     "content review",
@@ -80,7 +80,7 @@
     "AI audit and risk controls",
     "workflow automation n8n Power Automate",
     "AI operations and process automation"
-],
+  ],
   "approved_by_user": true,
   "approved_note": "User added specific job-title phrasing + tool-keyword search angle. This is the locked Stage 1 query set."
 }
